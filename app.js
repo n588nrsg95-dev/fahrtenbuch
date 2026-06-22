@@ -104,33 +104,93 @@ cameraInput.addEventListener('change', async () => {
   preview.src = URL.createObjectURL(file);
   confirmBox.classList.remove('hidden');
   kmInput.value = '';
-  statusEl.textContent = 'Foto wird gelesen...';
+  statusEl.textContent = 'Foto wird vorbereitet...';
+
   try {
-    if (window.Tesseract) {
-      const result = await Tesseract.recognize(file, 'eng');
-      const text = result?.data?.text || '';
-      const km = extractKm(text);
-      if (km) {
-        kmInput.value = km;
-        statusEl.textContent = 'Kilometerstand erkannt. Bitte prüfen und speichern.';
-      } else {
-        statusEl.textContent = 'Nicht sicher erkannt. Bitte Kilometerstand eintragen.';
+    if (!window.Tesseract) {
+      statusEl.textContent = 'Texterkennung wurde nicht geladen. Kilometerstand bitte eintragen.';
+      kmInput.focus();
+      return;
+    }
+
+    const processedCanvas = await prepareImageForOcr(file);
+    statusEl.textContent = 'Kilometerstand wird gelesen...';
+
+    const result = await Tesseract.recognize(processedCanvas, 'eng', {
+      tessedit_char_whitelist: '0123456789 .,-',
+      logger: m => {
+        if (m.status === 'recognizing text' && m.progress) {
+          statusEl.textContent = `Kilometerstand wird gelesen... ${Math.round(m.progress * 100)} %`;
+        }
       }
+    });
+
+    const text = result?.data?.text || '';
+    const km = extractKm(text);
+    if (km) {
+      kmInput.value = km;
+      statusEl.textContent = 'Kilometerstand erkannt. Bitte kurz prüfen und speichern.';
+      saveEntryBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
     } else {
-      statusEl.textContent = 'OCR nicht geladen. Bitte Kilometerstand eintragen.';
+      statusEl.textContent = 'Nicht sicher erkannt. Bitte Kilometerstand eintippen.';
+      kmInput.focus();
     }
   } catch (err) {
     console.error(err);
-    statusEl.textContent = 'OCR nicht möglich. Bitte Kilometerstand eintragen.';
+    statusEl.textContent = 'Texterkennung nicht möglich. Bitte Kilometerstand eintippen.';
+    kmInput.focus();
   }
-  kmInput.focus();
 });
 
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+async function prepareImageForOcr(file) {
+  const img = await loadImage(file);
+  const maxW = 1400;
+  const scale = Math.min(maxW / img.width, 1);
+  const w = Math.round(img.width * scale);
+  const h = Math.round(img.height * scale);
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0, w, h);
+
+  const imageData = ctx.getImageData(0, 0, w, h);
+  const data = imageData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+    const contrast = Math.max(0, Math.min(255, (gray - 128) * 1.8 + 128));
+    const v = contrast > 150 ? 255 : 0;
+    data[i] = data[i + 1] = data[i + 2] = v;
+  }
+  ctx.putImageData(imageData, 0, 0);
+  return canvas;
+}
+
 function extractKm(text) {
-  const cleaned = String(text).replace(/\s/g, '');
-  const matches = cleaned.match(/\d{4,7}/g);
-  if (!matches || !matches.length) return '';
-  return matches.sort((a,b) => b.length - a.length)[0];
+  const normalized = String(text)
+    .toUpperCase()
+    .replace(/[OQD]/g, '0')
+    .replace(/[IL|]/g, '1')
+    .replace(/S/g, '5')
+    .replace(/B/g, '8');
+
+  const candidates = normalized.match(/[0-9][0-9 .,-]{2,12}[0-9]/g) || [];
+  const numbers = candidates
+    .map(x => x.replace(/\D/g, ''))
+    .filter(x => x.length >= 4 && x.length <= 7);
+
+  if (!numbers.length) return '';
+  numbers.sort((a, b) => b.length - a.length || Number(b) - Number(a));
+  return numbers[0];
 }
 
 saveEntryBtn.addEventListener('click', () => {
@@ -169,7 +229,13 @@ exportBtn.addEventListener('click', () => {
 });
 
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(console.warn));
+  window.addEventListener('load', async () => {
+    try {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.update()));
+      await navigator.serviceWorker.register('./sw.js');
+    } catch (e) { console.warn(e); }
+  });
 }
 
 renderPatients();
