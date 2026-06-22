@@ -1,61 +1,87 @@
 <!doctype html>
 <html lang="de">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0f766e">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Fahrtenbuch Patienten</title>
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body>
   <main class="app">
     <header>
       <h1>Fahrtenbuch</h1>
-      <p>Ankunft beim Patienten erfassen</p>
+      <p>Kilometerstand bei Patientenbesuchen erfassen</p>
     </header>
 
     <section class="card">
-      <label for="patientSelect">Patient</label>
-      <select id="patientSelect"></select>
-      <button id="addPatientBtn" class="secondary" type="button">+ Neuen Patienten anlegen</button>
-    </section>
-
-    <section class="card action-card">
-      <button id="arrivalBtn" class="primary" type="button">📷 Ankunft beim Patienten</button>
-      <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
-      <p id="status" class="status">Bereit</p>
-    </section>
-
-    <section id="confirmBox" class="card hidden">
-      <h2>Kilometerstand bestätigen</h2>
-      <img id="preview" alt="Foto vom Kilometerstand">
-      <label for="kmInput">Kilometerstand</label>
-      <input id="kmInput" inputmode="numeric" pattern="[0-9]*" placeholder="z. B. 124532">
-      <button id="saveEntryBtn" class="primary" type="button">Speichern</button>
-      <button id="cancelBtn" class="secondary" type="button">Abbrechen</button>
+      <label>Fahrzeug</label>
+      <div class="row">
+        <select id="vehicleSelect"></select>
+        <button id="addVehicleBtn" class="secondary">+</button>
+      </div>
+      <small id="calibrationStatus"></small>
     </section>
 
     <section class="card">
-      <h2>Heutige Einträge</h2>
-      <div id="entryList" class="entries"></div>
-      <button id="exportBtn" class="secondary" type="button">CSV exportieren</button>
+      <label>Patient</label>
+      <div class="row">
+        <select id="patientSelect"></select>
+        <button id="addPatientBtn" class="secondary">+</button>
+      </div>
+    </section>
+
+    <section class="actions">
+      <button id="firstBtn" class="big green">Erster Patient</button>
+      <button id="normalBtn" class="big blue">Ankunft Patient</button>
+      <button id="lastBtn" class="big red">Letzter Patient</button>
+    </section>
+
+    <section class="grid">
+      <button id="calibrateBtn" class="tile">⚙️<span>Kalibrierung</span></button>
+      <button id="entriesBtn" class="tile">📋<span>Einträge</span></button>
+      <button id="exportBtn" class="tile">📤<span>Monatsabrechnung</span></button>
+      <button id="clearBtn" class="tile danger">🗑️<span>Testdaten löschen</span></button>
+    </section>
+
+    <section id="entries" class="card hidden">
+      <h2>Einträge</h2>
+      <div id="entryList"></div>
     </section>
   </main>
 
-  <dialog id="patientDialog">
-    <form method="dialog" class="dialog-card">
-      <h2>Neuer Patient</h2>
-      <label for="newPatientInput">Name / Kürzel</label>
-      <input id="newPatientInput" autocomplete="off" placeholder="z. B. Müller">
-      <menu>
-        <button id="closeDialogBtn" value="cancel" class="secondary" type="button">Abbrechen</button>
-        <button id="savePatientBtn" value="default" class="primary" type="button">Speichern</button>
-      </menu>
+  <input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
+
+  <dialog id="kmDialog">
+    <form method="dialog" class="dialogContent">
+      <h2 id="dialogTitle">Kilometerstand</h2>
+      <canvas id="previewCanvas"></canvas>
+      <p id="ocrHint">Foto wird ausgewertet …</p>
+      <label>Kilometerstand</label>
+      <input id="kmInput" type="number" inputmode="numeric" placeholder="z. B. 124537" />
+      <div class="row">
+        <button id="retryBtn" type="button" class="secondary">Neu fotografieren</button>
+        <button id="saveKmBtn" type="button" class="primary">Speichern</button>
+      </div>
     </form>
   </dialog>
 
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <dialog id="calDialog">
+    <form method="dialog" class="dialogContent">
+      <h2>Kalibrierung</h2>
+      <p>Fotografiere das Kombiinstrument. Danach markierst du mit dem Finger den Bereich, in dem der Kilometerstand steht.</p>
+      <canvas id="calCanvas"></canvas>
+      <label>Kilometerstand auf dem Foto</label>
+      <input id="calKmInput" type="number" inputmode="numeric" placeholder="z. B. 124537" />
+      <p class="small">Tipp: Auf dem Foto den Bereich um den Kilometerstand ziehen. Bei Bedarf einfach erneut ziehen.</p>
+      <div class="row">
+        <button id="calPhotoBtn" type="button" class="secondary">Foto wählen</button>
+        <button id="saveCalBtn" type="button" class="primary">Kalibrierung speichern</button>
+      </div>
+    </form>
+  </dialog>
+
   <script src="app.js"></script>
 </body>
 </html>
