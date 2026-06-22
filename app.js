@@ -24,7 +24,39 @@ function render(){
   const count = state.entries.filter(e=>e.date===todayISO()).length;
   $('todayText').textContent = `Heute, ${fmtDate(todayISO())}`;
   $('todayCount').textContent = `${count} Einträge`;
+  renderPatientView();
   renderEntriesView();
+}
+function renderPatientView(){
+  const sel=$('patientSelect'); const list=$('patientList');
+  if(!sel || !list) return;
+  const patients=[...new Set(state.patients)].sort((a,b)=>a.localeCompare(b,'de'));
+  sel.innerHTML='<option value="">Bitte auswählen</option>'+patients.map(p=>`<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
+  sel.value = patients.includes(state.currentPatient) ? state.currentPatient : '';
+  list.innerHTML = patients.length ? '<div class="small-title">Schnellauswahl</div>' : '<div class="hint light">Noch keine Patienten gespeichert.</div>';
+  patients.forEach(p=>{
+    const b=document.createElement('button');
+    b.type='button'; b.className='patient-chip'+(p===state.currentPatient?' active':'');
+    b.textContent=p;
+    b.onclick=()=>{ state.currentPatient=p; save(); show('homeView'); };
+    list.appendChild(b);
+  });
+}
+function openPatientView(){ renderPatientView(); show('patientView'); setTimeout(()=>$('newPatientInput')?.focus(),50); }
+function addPatient(){
+  const inp=$('newPatientInput');
+  const name=(inp?.value||'').trim();
+  if(!name){ alert('Bitte Namen des Patienten eintragen.'); return; }
+  if(!state.patients.includes(name)) state.patients.push(name);
+  state.currentPatient=name;
+  if(inp) inp.value='';
+  save();
+  show('homeView');
+}
+function selectPatient(){
+  const name=$('patientSelect')?.value || '';
+  if(!name){ alert('Bitte einen Patienten auswählen oder neuen Patienten anlegen.'); return; }
+  state.currentPatient=name; save(); show('homeView');
 }
 function renderEntriesView(){
   const list = $('entryList'); if(!list) return;
@@ -43,14 +75,7 @@ function renderEntriesView(){
     list.appendChild(div);
   });
 }
-function choosePatient(){
-  const existing = state.patients.length ? '\nBekannte Patienten:\n' + state.patients.map((p,i)=>`${i+1}. ${p}`).join('\n') : '';
-  const input = prompt('Patient auswählen oder neuen Namen eingeben:' + existing, state.currentPatient || '');
-  if(!input) return;
-  const n = input.trim(); if(!n) return;
-  if(!state.patients.includes(n)) state.patients.push(n);
-  state.currentPatient = n; save();
-}
+function choosePatient(){ openPatientView(); }
 function startCapture(kind){
   pendingKind = kind;
   pendingImageData = null;
@@ -151,7 +176,7 @@ function handleCaptureFile(file){
 function saveEntry(){
   const km=$('kmInput').value.replace(/[^0-9]/g,'');
   if(!km || km.length<4){ alert('Bitte Kilometerstand eintragen.'); return; }
-  if(!state.currentPatient){ choosePatient(); if(!state.currentPatient) return; }
+  if(!state.currentPatient){ alert('Bitte zuerst einen Patienten auswählen oder neu anlegen.'); openPatientView(); return; }
   state.entries.push({id:crypto.randomUUID?.()||String(Date.now()),kind:pendingKind,patient:state.currentPatient,km:Number(km),date:todayISO(),time:nowTime()});
   save(); show('homeView');
 }
@@ -215,7 +240,9 @@ function saveCalibration(){
 
 document.addEventListener('DOMContentLoaded',()=>{
   render(); if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
-  $('settingsBtn').onclick=()=>show('settingsView'); $('choosePatientBtn').onclick=choosePatient; $('patientCard').onclick=choosePatient;
+  $('settingsBtn').onclick=()=>show('settingsView'); $('choosePatientBtn').onclick=openPatientView; $('patientCard').onclick=openPatientView;
+  $('selectPatientBtn').onclick=selectPatient; $('addPatientBtn').onclick=addPatient; $('patientSelect').onchange=selectPatient;
+  $('newPatientInput').addEventListener('keydown',e=>{ if(e.key==='Enter') addPatient(); });
   document.querySelectorAll('.backBtn').forEach(b=>b.onclick=()=>show('homeView'));
   document.querySelectorAll('.action').forEach(b=>b.onclick=()=>startCapture(b.dataset.kind));
   $('entriesBtn').onclick=()=>{render();show('entriesView')}; $('uploadBtn').onclick=()=>{startCapture('visit'); openFile('galleryInput');};

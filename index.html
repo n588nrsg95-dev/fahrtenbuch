@@ -25,7 +25,7 @@
           <div class="label">Aktueller Patient</div>
           <div id="currentPatient" class="value">Bitte auswählen</div>
         </div>
-        <button id="choosePatientBtn" class="chevron">›</button>
+        <button id="choosePatientBtn" class="chevron" type="button">›</button>
       </section>
 
       <button class="action green" data-kind="first">
@@ -47,6 +47,26 @@
       <section class="today-summary"><span id="todayText">Heute</span><b id="todayCount">0 Einträge</b></section>
     </main>
 
+
+    <main id="patientView" class="view">
+      <div class="subbar"><button class="backBtn">‹</button><h2>Patient auswählen</h2><span></span></div>
+      <section class="patient-panel">
+        <label class="input-label">Bekannte Patienten</label>
+        <select id="patientSelect" class="patient-select">
+          <option value="">Bitte auswählen</option>
+        </select>
+        <button id="selectPatientBtn" class="primary wide">Patient übernehmen</button>
+
+        <div class="divider"><span>oder</span></div>
+
+        <label class="input-label">Neuen Patienten anlegen</label>
+        <input id="newPatientInput" class="text-input" placeholder="Name des Patienten" autocomplete="off" />
+        <button id="addPatientBtn" class="secondary wide">+ Neuen Patienten speichern</button>
+
+        <div id="patientList" class="patient-list"></div>
+      </section>
+    </main>
+
     <main id="entriesView" class="view">
       <div class="subbar"><button class="backBtn">‹</button><h2>Einträge</h2><button id="filterBtn" class="icon-btn">⌕</button></div>
       <div id="entryList" class="list"></div>
@@ -63,7 +83,7 @@
       </section>
       <section class="settings-group">
         <div class="group-title">INFO</div>
-        <div class="settings-row static"><div><b>Version</b><small>4.1</small></div></div>
+        <div class="settings-row static"><div><b>Version</b><small>4.2</small></div></div>
       </section>
     </main>
 
