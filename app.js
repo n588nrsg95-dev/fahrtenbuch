@@ -7,8 +7,12 @@ let calibrationImageData = null;
 let crop = state.calibration?.crop || {x:.25,y:.55,w:.50,h:.18};
 
 function load(){
-  try { return JSON.parse(localStorage.getItem(storeKey)) || {patients:[],entries:[],currentPatient:'',calibration:null}; }
-  catch { return {patients:[],entries:[],currentPatient:'',calibration:null}; }
+  const defaults = {patients:[],entries:[],currentPatient:'',calibration:null,rate:0.30};
+  try {
+    const data = JSON.parse(localStorage.getItem(storeKey)) || defaults;
+    return {...defaults, ...data, rate: Number(data.rate ?? 0.30) || 0.30};
+  }
+  catch { return defaults; }
 }
 function save(){ localStorage.setItem(storeKey, JSON.stringify(state)); render(); }
 function show(id){ document.querySelectorAll('.view').forEach(v=>v.classList.remove('active')); $(id).classList.add('active'); }
@@ -21,6 +25,7 @@ function sortedEntries(){
 }
 function render(){
   $('currentPatient').textContent = state.currentPatient || 'Bitte auswählen';
+  if($('rateInput')) $('rateInput').value = formatRate(state.rate ?? 0.30);
   const count = state.entries.filter(e=>e.date===todayISO()).length;
   $('todayText').textContent = `Heute, ${fmtDate(todayISO())}`;
   $('todayCount').textContent = `${count} Einträge`;
@@ -30,7 +35,7 @@ function render(){
 function renderPatientView(){
   const sel=$('patientSelect'); const list=$('patientList');
   if(!sel || !list) return;
-  const patients=[...new Set(state.patients)].sort((a,b)=>a.localeCompare(b,'de'));
+  const patients=[...new Set(state.patients)].sort((a,b)=>a.localeCompare(b,'de')); // gespeicherte Anschriften
   sel.innerHTML='<option value="">Bitte auswählen</option>'+patients.map(p=>`<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
   sel.value = patients.includes(state.currentPatient) ? state.currentPatient : '';
   list.innerHTML = patients.length ? '<div class="small-title">Schnellauswahl</div>' : '<div class="hint light">Noch keine Patienten gespeichert.</div>';
@@ -46,7 +51,7 @@ function openPatientView(){ renderPatientView(); show('patientView'); setTimeout
 function addPatient(){
   const inp=$('newPatientInput');
   const name=(inp?.value||'').trim();
-  if(!name){ alert('Bitte Namen des Patienten eintragen.'); return; }
+  if(!name){ alert('Bitte Anschrift eintragen.'); return; }
   if(!state.patients.includes(name)) state.patients.push(name);
   state.currentPatient=name;
   if(inp) inp.value='';
@@ -55,7 +60,7 @@ function addPatient(){
 }
 function selectPatient(){
   const name=$('patientSelect')?.value || '';
-  if(!name){ alert('Bitte einen Patienten auswählen oder neuen Patienten anlegen.'); return; }
+  if(!name){ alert('Bitte eine Anschrift auswählen oder neu anlegen.'); return; }
   state.currentPatient=name; save(); show('homeView');
 }
 function renderEntriesView(){
@@ -176,7 +181,7 @@ function handleCaptureFile(file){
 function saveEntry(){
   const km=$('kmInput').value.replace(/[^0-9]/g,'');
   if(!km || km.length<4){ alert('Bitte Kilometerstand eintragen.'); return; }
-  if(!state.currentPatient){ alert('Bitte zuerst einen Patienten auswählen oder neu anlegen.'); openPatientView(); return; }
+  if(!state.currentPatient){ alert('Bitte zuerst eine Anschrift auswählen oder neu anlegen.'); openPatientView(); return; }
   state.entries.push({id:crypto.randomUUID?.()||String(Date.now()),kind:pendingKind,patient:state.currentPatient,km:Number(km),date:todayISO(),time:nowTime()});
   save(); show('homeView');
 }
@@ -187,30 +192,78 @@ function excelDateName(){
   const now=new Date();
   return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
 }
+function formatRate(v){
+  const n = Number(v ?? 0.30);
+  return String(n.toFixed(2)).replace('.', ',');
+}
+function parseRate(v){
+  const n = Number(String(v||'').replace(',', '.').replace(/[^0-9.]/g,''));
+  return Number.isFinite(n) && n > 0 ? n : 0.30;
+}
+function updateRate(){
+  state.rate = parseRate($('rateInput')?.value || '0,30');
+  localStorage.setItem(storeKey, JSON.stringify(state));
+}
+function euro(v){ return Number(v||0).toFixed(2).replace('.', ','); }
+function dayDistanceRows(rows){
+  let lastDate='', prevKm=null;
+  return rows.map(e=>{
+    if(e.date !== lastDate){ lastDate=e.date; prevKm=null; }
+    let dist = null;
+    if(prevKm !== null){ const d = Number(e.km) - Number(prevKm); dist = d >= 0 ? d : null; }
+    prevKm = Number(e.km);
+    return {...e, distance: dist, reimbursement: dist === null ? null : dist * (Number(state.rate)||0.30)};
+  });
+}
 function monthExcel(){
+  updateRate();
   const ym=excelDateName();
-  const rows=sortedEntries().filter(e=>e.date.startsWith(ym));
+  const rows=dayDistanceRows(sortedEntries().filter(e=>e.date.startsWith(ym)));
+  const rate = Number(state.rate)||0.30;
+  const totalKm = rows.reduce((sum,e)=>sum+(e.distance||0),0);
+  const totalEuro = totalKm * rate;
+  const vehicle = state.calibration?.vehicle || '';
   let html=`<!doctype html><html><head><meta charset="utf-8"><style>
-    table{border-collapse:collapse;font-family:Arial,sans-serif;font-size:12pt}
-    th{background:#e8ecff;font-weight:bold}
-    th,td{border:1px solid #999;padding:6px 10px;vertical-align:top}
-    .day td{background:#f4f4f4;font-weight:bold}
+    body{font-family:Arial,sans-serif}
+    table{border-collapse:collapse;font-family:Arial,sans-serif;font-size:11pt}
+    h1{font-size:18pt;margin:0 0 18px}
+    th,td{border:1px solid #777;padding:5px 8px;vertical-align:top;mso-number-format:"\\@"}
+    .head{background:#dbe5f1;font-weight:bold;text-align:center}
+    .sub{background:#eef3f8;font-weight:bold;text-align:center}
+    .day td{background:#f3f4f6;font-weight:bold}
+    .num{text-align:right;mso-number-format:"0"}.money{text-align:right;mso-number-format:"0.00"}
+    .blank{border:0}.sum{font-weight:bold;background:#eaf7ea}
   </style></head><body>`;
-  html+=`<h2>Monatsabrechnung ${escapeHtml(ym)}</h2>`;
-  html+=`<table><thead><tr><th>Typ</th><th>Patient</th><th>Datum</th><th>Uhrzeit</th><th>KM</th></tr></thead><tbody>`;
+  html+=`<h1>Fahrtenbuch / Monatsabrechnung ${escapeHtml(ym)}</h1>`;
+  html+=`<table>`;
+  html+=`<tr><td class="blank" colspan="10"></td></tr>`;
+  html+=`<tr><td class="head">Fahrer</td><td colspan="2"></td><td class="head">Kilometergeld (€/km)</td><td></td><td></td><td class="head">Summe km</td><td></td><td class="head">Summe Euro</td><td class="head">Fahrzeug</td></tr>`;
+  html+=`<tr><td>Inga Szelagowski</td><td colspan="2"></td><td class="money">${escapeHtml(euro(rate))}</td><td></td><td></td><td class="num sum">${escapeHtml(totalKm)}</td><td></td><td class="money sum">${escapeHtml(euro(totalEuro))}</td><td>${escapeHtml(vehicle)}</td></tr>`;
+  html+=`<tr><td class="blank" colspan="10"></td></tr>`;
+  html+=`<tr class="head"><th>Datum</th><th>Private Nutzung</th><th>Route</th><th>Anschrift</th><th colspan="2">Abgelesener Kilometerstand</th><th>Distanz</th><th></th><th>Reisekostenersatz</th><th>Notizen</th></tr>`;
+  html+=`<tr class="sub"><th>Tag</th><th></th><th>Von - Bis</th><th>Einrichtung / Klient</th><th>Start</th><th>Ende</th><th>km</th><th></th><th>Euro</th><th>z. B. Fahrer, Tankung</th></tr>`;
   if(!rows.length){
-    html+=`<tr><td colspan="5">Keine Einträge im aktuellen Monat vorhanden.</td></tr>`;
+    html+=`<tr><td colspan="10">Keine Einträge im aktuellen Monat vorhanden.</td></tr>`;
   } else {
     let lastDate='';
     rows.forEach(e=>{
-      if(e.date!==lastDate){
-        lastDate=e.date;
-        html+=`<tr class="day"><td colspan="5">${escapeHtml(fmtDate(e.date))}</td></tr>`;
-      }
-      html+=`<tr><td>${escapeHtml(kindLabel(e.kind))}</td><td>${escapeHtml(e.patient||'')}</td><td>${escapeHtml(fmtDate(e.date))}</td><td>${escapeHtml(e.time)}</td><td>${escapeHtml(e.km)}</td></tr>`;
+      const showDate = e.date !== lastDate;
+      if(showDate) lastDate = e.date;
+      html+=`<tr>`+
+        `<td>${showDate ? escapeHtml(fmtDate(e.date)) : ''}</td>`+
+        `<td></td>`+
+        `<td>${escapeHtml(kindLabel(e.kind))}</td>`+
+        `<td>${escapeHtml(e.patient||'')}</td>`+
+        `<td class="num">${escapeHtml(e.km)}</td>`+
+        `<td></td>`+
+        `<td class="num">${e.distance === null ? '' : escapeHtml(e.distance)}</td>`+
+        `<td></td>`+
+        `<td class="money">${e.reimbursement === null ? '' : escapeHtml(euro(e.reimbursement))}</td>`+
+        `<td>${escapeHtml(e.time)}</td>`+
+      `</tr>`;
     });
   }
-  html+=`</tbody></table></body></html>`;
+  html+=`</table></body></html>`;
   download('monatsabrechnung_'+ym+'.xls', html, 'application/vnd.ms-excel;charset=utf-8');
 }
 function download(name, content, type='text/plain;charset=utf-8'){
@@ -240,7 +293,8 @@ function saveCalibration(){
 
 document.addEventListener('DOMContentLoaded',()=>{
   render(); if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
-  $('settingsBtn').onclick=()=>show('settingsView'); $('choosePatientBtn').onclick=openPatientView; $('patientCard').onclick=openPatientView;
+  $('settingsBtn').onclick=()=>show('settingsView');
+  if($('rateInput')) { $('rateInput').onchange=()=>{ updateRate(); render(); }; $('rateInput').onblur=()=>{ updateRate(); render(); }; } $('choosePatientBtn').onclick=openPatientView; $('patientCard').onclick=openPatientView;
   $('selectPatientBtn').onclick=selectPatient; $('addPatientBtn').onclick=addPatient; $('patientSelect').onchange=selectPatient;
   $('newPatientInput').addEventListener('keydown',e=>{ if(e.key==='Enter') addPatient(); });
   document.querySelectorAll('.backBtn').forEach(b=>b.onclick=()=>show('homeView'));
