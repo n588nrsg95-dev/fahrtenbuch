@@ -16,17 +16,30 @@ function todayISO(){ return new Date().toISOString().slice(0,10); }
 function fmtDate(iso){ const [y,m,d]=iso.split('-'); return `${d}.${m}.${y}`; }
 function nowTime(){ return new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}); }
 function kindLabel(k){ return k==='first'?'Erster Patient':k==='last'?'Letzter Patient':'Patient'; }
+function sortedEntries(){
+  return [...state.entries].sort((a,b)=>(a.date+' '+a.time).localeCompare(b.date+' '+b.time));
+}
 function render(){
   $('currentPatient').textContent = state.currentPatient || 'Bitte auswählen';
   const count = state.entries.filter(e=>e.date===todayISO()).length;
   $('todayText').textContent = `Heute, ${fmtDate(todayISO())}`;
   $('todayCount').textContent = `${count} Einträge`;
-  const list = $('entryList'); list.innerHTML='';
-  const entries = [...state.entries].sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
+  renderEntriesView();
+}
+function renderEntriesView(){
+  const list = $('entryList'); if(!list) return;
+  list.innerHTML='';
+  const entries = sortedEntries();
   if(!entries.length){ list.innerHTML='<div class="hint">Noch keine Einträge vorhanden.</div>'; return; }
+  let lastDate='';
   entries.forEach(e=>{
+    if(e.date!==lastDate){
+      lastDate=e.date;
+      const h=document.createElement('div'); h.className='day-heading'; h.textContent=fmtDate(e.date);
+      list.appendChild(h);
+    }
     const div=document.createElement('div'); div.className='entry';
-    div.innerHTML=`<div><b>${kindLabel(e.kind)}</b><small><br>${fmtDate(e.date)} · ${e.time}<br>${e.patient||'-'}</small></div><div><b>${e.km}</b><small><br>km</small></div>`;
+    div.innerHTML=`<div><b>${kindLabel(e.kind)}</b><small><br>${e.patient||'-'}<br>${e.time}</small></div><div><b>${e.km}</b><small><br>km</small></div>`;
     list.appendChild(div);
   });
 }
@@ -142,21 +155,41 @@ function saveEntry(){
   state.entries.push({id:crypto.randomUUID?.()||String(Date.now()),kind:pendingKind,patient:state.currentPatient,km:Number(km),date:todayISO(),time:nowTime()});
   save(); show('homeView');
 }
-function monthCsv(){
-  const now=new Date(); const ym=now.toISOString().slice(0,7);
-  const rows=state.entries.filter(e=>e.date.startsWith(ym)).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
-  const byDay={}; rows.forEach(e=>{(byDay[e.date] ||= []).push(e)});
-  const out=[['Monat',ym],[],['Datum','Erster Patient KM','Letzter Patient KM','Verguetete KM','Anzahl Besuche'],[]];
-  for(const day of Object.keys(byDay).sort()){
-    const d=byDay[day]; const first=d.find(e=>e.kind==='first')||d[0]; const last=[...d].reverse().find(e=>e.kind==='last')||d[d.length-1];
-    out.push([fmtDate(day),first?.km||'',last?.km||'',first&&last?Math.max(0,last.km-first.km):'',d.length]);
-  }
-  out.push([],['Einzelnachweise'],['Datum','Uhrzeit','Typ','Patient','Kilometerstand']);
-  rows.forEach(e=>out.push([fmtDate(e.date),e.time,kindLabel(e.kind),e.patient,e.km]));
-  download('monatsabrechnung.csv', out.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(';')).join('\n'));
+function escapeHtml(v){
+  return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-function download(name, content){
-  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([content],{type:'text/csv;charset=utf-8'})); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+function excelDateName(){
+  const now=new Date();
+  return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+}
+function monthExcel(){
+  const ym=excelDateName();
+  const rows=sortedEntries().filter(e=>e.date.startsWith(ym));
+  let html=`<!doctype html><html><head><meta charset="utf-8"><style>
+    table{border-collapse:collapse;font-family:Arial,sans-serif;font-size:12pt}
+    th{background:#e8ecff;font-weight:bold}
+    th,td{border:1px solid #999;padding:6px 10px;vertical-align:top}
+    .day td{background:#f4f4f4;font-weight:bold}
+  </style></head><body>`;
+  html+=`<h2>Monatsabrechnung ${escapeHtml(ym)}</h2>`;
+  html+=`<table><thead><tr><th>Typ</th><th>Patient</th><th>Datum</th><th>Uhrzeit</th><th>KM</th></tr></thead><tbody>`;
+  if(!rows.length){
+    html+=`<tr><td colspan="5">Keine Einträge im aktuellen Monat vorhanden.</td></tr>`;
+  } else {
+    let lastDate='';
+    rows.forEach(e=>{
+      if(e.date!==lastDate){
+        lastDate=e.date;
+        html+=`<tr class="day"><td colspan="5">${escapeHtml(fmtDate(e.date))}</td></tr>`;
+      }
+      html+=`<tr><td>${escapeHtml(kindLabel(e.kind))}</td><td>${escapeHtml(e.patient||'')}</td><td>${escapeHtml(fmtDate(e.date))}</td><td>${escapeHtml(e.time)}</td><td>${escapeHtml(e.km)}</td></tr>`;
+    });
+  }
+  html+=`</tbody></table></body></html>`;
+  download('monatsabrechnung_'+ym+'.xls', html, 'application/vnd.ms-excel;charset=utf-8');
+}
+function download(name, content, type='text/plain;charset=utf-8'){
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([content],{type})); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),5000);
 }
 function backup(){ download('fahrtenbuch-backup.json', JSON.stringify(state,null,2)); }
 function clearData(){ if(confirm('Wirklich alle Patienten, Einträge und Kalibrierungen löschen?')){ localStorage.removeItem(storeKey); state=load(); save(); show('homeView'); } }
@@ -189,7 +222,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   $('takePhotoBtn').onclick=()=>openFile('cameraInput'); $('selectPhotoBtn').onclick=()=>openFile('galleryInput');
   $('cameraInput').onchange=e=>handleCaptureFile(e.target.files[0]); $('galleryInput').onchange=e=>handleCaptureFile(e.target.files[0]);
   $('saveEntryBtn').onclick=saveEntry;
-  $('downloadMonthlyBtn').onclick=monthCsv; $('backupBtn').onclick=backup; $('clearDataBtn').onclick=clearData;
+  $('downloadMonthlyBtn').onclick=monthExcel; $('backupBtn').onclick=backup; $('clearDataBtn').onclick=clearData;
   $('calibrationBtn').onclick=()=>{ $('vehicleInput').value=state.calibration?.vehicle||''; $('calKmInput').value=state.calibration?.km||''; crop=state.calibration?.crop||crop; show('calibrationView'); attachCrop(); };
   $('calTakePhotoBtn').onclick=()=>openFile('calCameraInput'); $('calSelectPhotoBtn').onclick=()=>openFile('calGalleryInput');
   $('calCameraInput').onchange=e=>loadCalibrationPhoto(e.target.files[0]); $('calGalleryInput').onchange=e=>loadCalibrationPhoto(e.target.files[0]);
