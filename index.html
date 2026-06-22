@@ -1,4 +1,4 @@
-<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Fahrtenbuch</title><meta name="theme-color" content="#4f46e5"><link rel="manifest" href="manifest.webmanifest"><link rel="stylesheet" href="styles.css?v=5.13"></head><body>
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>Fahrtenbuch</title><meta name="theme-color" content="#4f46e5"><link rel="manifest" href="manifest.webmanifest"><link rel="stylesheet" href="styles.css?v=5.14"></head><body>
 <div class="app">
 <header class="topbar"><div><h1>Fahrtenbuch</h1><p>Kilometerstand erfassen</p></div><button id="settingsBtn" class="icon" type="button">⚙️</button></header>
 <main id="home" class="view active">
@@ -25,7 +25,7 @@
  <button id="backupBtn" class="setrow"><div><b>Datensicherung exportieren</b><small>Backup als JSON</small></div><span>☁️</span></button>
  <button id="clearTripsBtn" class="setrow danger"><div><b>Fahrtenbuchdaten löschen</b><small>Nur Fahrten und Kilometerstände löschen</small></div><span>🗑️</span></button>
  <button id="clearContactsBtn" class="setrow danger"><div><b>Kontaktdaten löschen</b><small>Nur gespeicherte Anschriften löschen</small></div><span>🗑️</span></button>
- <div class="version">Version 5.13</div></section></main>
+ <div class="version">Version 5.14</div></section></main>
 <main id="calibration" class="view"><div class="sub"><button class="backSettings">‹</button><h2>Kalibrierung</h2><span></span></div><section class="panel"><label>Fahrzeug</label><input id="vehicle" placeholder="z. B. VW Golf"><div class="two"><button id="calTake" class="primary">📷 Foto</button><button id="calPick" class="secondary">🖼️ Hochladen</button></div><div id="calPreview" class="preview cal fullcal"><span>Foto vom Kombiinstrument</span></div><small>Rahmen exakt um den Kilometerstand legen. Rahmen verschieben, unten rechts am Punkt vergrößern/verkleinern. Möglichst nur die Ziffern markieren, nicht Uhrzeit oder Temperatur.</small><label>Kilometerstand auf dem Foto</label><input id="calKm" inputmode="numeric" placeholder="z. B. 124537"><button id="saveCal" class="primary">Kalibrierung speichern</button></section></main>
 <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden><input id="galleryInput" type="file" accept="image/*" hidden><input id="calCameraInput" type="file" accept="image/*" capture="environment" hidden><input id="calGalleryInput" type="file" accept="image/*" hidden>
-</div><script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script><script src="app.js?v=5.13"></script></body></html>
+</div><script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script><script src="app.js?v=5.14"></script></body></html>
