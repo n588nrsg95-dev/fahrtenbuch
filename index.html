@@ -3,85 +3,109 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Fahrtenbuch Patienten</title>
-  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#4f46e5" />
+  <title>Fahrtenbuch</title>
+  <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="styles.css" />
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body>
-  <main class="app">
-    <header>
-      <h1>Fahrtenbuch</h1>
-      <p>Kilometerstand bei Patientenbesuchen erfassen</p>
+  <div id="app" class="app">
+    <header class="topbar">
+      <div>
+        <h1>Fahrtenbuch</h1>
+        <p>Kilometerstand erfassen</p>
+      </div>
+      <button id="settingsBtn" class="icon-btn" aria-label="Einstellungen">⚙️</button>
     </header>
 
-    <section class="card">
-      <label>Fahrzeug</label>
-      <div class="row">
-        <select id="vehicleSelect"></select>
-        <button id="addVehicleBtn" class="secondary">+</button>
+    <main id="homeView" class="view active">
+      <section class="card patient-card" id="patientCard">
+        <div class="card-icon">👤</div>
+        <div class="grow">
+          <div class="label">Aktueller Patient</div>
+          <div id="currentPatient" class="value">Bitte auswählen</div>
+        </div>
+        <button id="choosePatientBtn" class="chevron">›</button>
+      </section>
+
+      <button class="action green" data-kind="first">
+        <span class="action-icon">🚩</span>
+        <span><b>ERSTER PATIENT</b><small>Tagesbeginn markieren</small></span>
+      </button>
+      <button class="action blue" data-kind="visit">
+        <span class="action-icon">👤</span>
+        <span><b>ANKUNFT PATIENT</b><small>Patientenbesuch erfassen</small></span>
+      </button>
+      <button class="action red" data-kind="last">
+        <span class="action-icon">🏁</span>
+        <span><b>LETZTER PATIENT</b><small>Tagesende markieren</small></span>
+      </button>
+
+      <button id="entriesBtn" class="row-btn"><span>☷</span><div><b>Einträge anzeigen</b><small>Alle Fahrten</small></div><em>›</em></button>
+      <button id="uploadBtn" class="row-btn"><span>🖼️</span><div><b>Foto hochladen</b><small>Aus Galerie auswählen</small></div><em>›</em></button>
+
+      <section class="today-summary"><span id="todayText">Heute</span><b id="todayCount">0 Einträge</b></section>
+    </main>
+
+    <main id="entriesView" class="view">
+      <div class="subbar"><button class="backBtn">‹</button><h2>Einträge</h2><button id="filterBtn" class="icon-btn">⌕</button></div>
+      <div id="entryList" class="list"></div>
+    </main>
+
+    <main id="settingsView" class="view">
+      <div class="subbar"><button class="backBtn">‹</button><h2>Einstellungen</h2><span></span></div>
+      <section class="settings-group">
+        <div class="group-title">ALLGEMEIN</div>
+        <button id="downloadMonthlyBtn" class="settings-row"><div><b>Monatsabrechnung (CSV)</b><small>Abrechnung herunterladen</small></div><span>⬇️</span></button>
+        <button id="calibrationBtn" class="settings-row"><div><b>Kalibrierung</b><small>Für jedes Fahrzeug einmal</small></div><span>🎯</span></button>
+        <button id="clearDataBtn" class="settings-row danger"><div><b>Daten löschen</b><small>Alle lokalen Daten entfernen</small></div><span>🗑️</span></button>
+        <button id="backupBtn" class="settings-row"><div><b>Daten sichern</b><small>JSON-Backup herunterladen</small></div><span>☁️</span></button>
+      </section>
+      <section class="settings-group">
+        <div class="group-title">INFO</div>
+        <div class="settings-row static"><div><b>Version</b><small>4.0</small></div></div>
+      </section>
+    </main>
+
+    <main id="captureView" class="view capture">
+      <div class="subbar"><button class="backBtn">‹</button><h2>Kilometerstand erfassen</h2><span></span></div>
+      <div class="capture-panel">
+        <div id="photoPreview" class="photo-preview"><span>Noch kein Foto</span></div>
+        <div class="hint">Foto aufnehmen oder hochladen. Die App sucht flexibel nach Kilometerständen und nutzt bei vorhandener Kalibrierung bevorzugt den markierten Bereich.</div>
+        <div class="capture-buttons">
+          <button id="takePhotoBtn" class="primary">📷 Foto machen</button>
+          <button id="selectPhotoBtn" class="secondary">🖼️ Hochladen</button>
+        </div>
+        <div id="ocrStatus" class="status">Bereit</div>
+        <label class="input-label">Kilometerstand</label>
+        <input id="kmInput" class="km-input" inputmode="numeric" pattern="[0-9]*" placeholder="z. B. 124537" />
+        <button id="saveEntryBtn" class="primary wide">Übernehmen</button>
       </div>
-      <small id="calibrationStatus"></small>
-    </section>
+    </main>
 
-    <section class="card">
-      <label>Patient</label>
-      <div class="row">
-        <select id="patientSelect"></select>
-        <button id="addPatientBtn" class="secondary">+</button>
+    <main id="calibrationView" class="view capture">
+      <div class="subbar"><button class="backBtn">‹</button><h2>Kalibrierung</h2><span></span></div>
+      <div class="capture-panel">
+        <label class="input-label">Fahrzeugprofil</label>
+        <input id="vehicleInput" class="text-input" placeholder="z. B. Audi, Dienstwagen, VW Golf" />
+        <div id="calPhotoPreview" class="photo-preview crop-host"><span>Kalibrierungsfoto fehlt</span><canvas id="cropCanvas"></canvas><div id="cropBox" class="crop-box"></div></div>
+        <div class="hint">Nach dem Foto kannst du den Rahmen grob auf den Kilometerstand ziehen. Bei späteren Fotos wertet die App zuerst diesen Bereich aus.</div>
+        <div class="capture-buttons">
+          <button id="calTakePhotoBtn" class="primary">📷 Foto machen</button>
+          <button id="calSelectPhotoBtn" class="secondary">🖼️ Hochladen</button>
+        </div>
+        <label class="input-label">Kilometerstand auf dem Foto</label>
+        <input id="calKmInput" class="km-input" inputmode="numeric" pattern="[0-9]*" placeholder="z. B. 124537" />
+        <button id="saveCalibrationBtn" class="primary wide">Kalibrierung speichern</button>
       </div>
-    </section>
+    </main>
 
-    <section class="actions">
-      <button id="firstBtn" class="big green">Erster Patient</button>
-      <button id="normalBtn" class="big blue">Ankunft Patient</button>
-      <button id="lastBtn" class="big red">Letzter Patient</button>
-    </section>
-
-    <section class="grid">
-      <button id="calibrateBtn" class="tile">⚙️<span>Kalibrierung</span></button>
-      <button id="entriesBtn" class="tile">📋<span>Einträge</span></button>
-      <button id="exportBtn" class="tile">📤<span>Monatsabrechnung</span></button>
-      <button id="clearBtn" class="tile danger">🗑️<span>Testdaten löschen</span></button>
-    </section>
-
-    <section id="entries" class="card hidden">
-      <h2>Einträge</h2>
-      <div id="entryList"></div>
-    </section>
-  </main>
-
-  <input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
-
-  <dialog id="kmDialog">
-    <form method="dialog" class="dialogContent">
-      <h2 id="dialogTitle">Kilometerstand</h2>
-      <canvas id="previewCanvas"></canvas>
-      <p id="ocrHint">Foto wird ausgewertet …</p>
-      <label>Kilometerstand</label>
-      <input id="kmInput" type="number" inputmode="numeric" placeholder="z. B. 124537" />
-      <div class="row">
-        <button id="retryBtn" type="button" class="secondary">Neu fotografieren</button>
-        <button id="saveKmBtn" type="button" class="primary">Speichern</button>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog id="calDialog">
-    <form method="dialog" class="dialogContent">
-      <h2>Kalibrierung</h2>
-      <p>Fotografiere das Kombiinstrument. Danach markierst du mit dem Finger den Bereich, in dem der Kilometerstand steht.</p>
-      <canvas id="calCanvas"></canvas>
-      <label>Kilometerstand auf dem Foto</label>
-      <input id="calKmInput" type="number" inputmode="numeric" placeholder="z. B. 124537" />
-      <p class="small">Tipp: Auf dem Foto den Bereich um den Kilometerstand ziehen. Bei Bedarf einfach erneut ziehen.</p>
-      <div class="row">
-        <button id="calPhotoBtn" type="button" class="secondary">Foto wählen</button>
-        <button id="saveCalBtn" type="button" class="primary">Kalibrierung speichern</button>
-      </div>
-    </form>
-  </dialog>
-
+    <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden />
+    <input id="galleryInput" type="file" accept="image/*" hidden />
+    <input id="calCameraInput" type="file" accept="image/*" capture="environment" hidden />
+    <input id="calGalleryInput" type="file" accept="image/*" hidden />
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

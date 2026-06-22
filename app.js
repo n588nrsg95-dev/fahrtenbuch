@@ -1,149 +1,197 @@
-const storeKey='fb_v3';
-const $=id=>document.getElementById(id);
-let state=load();
-let pendingType=null;
-let pendingImage=null;
-let calImage=null;
-let calRect=null;
-let drawing=false,startPt=null;
+const $ = (id) => document.getElementById(id);
+const storeKey = 'fahrtenbuch.v4';
+let state = load();
+let pendingKind = 'visit';
+let pendingImageData = null;
+let calibrationImageData = null;
+let crop = state.calibration?.crop || {x:.25,y:.55,w:.50,h:.18};
 
 function load(){
-  const s=JSON.parse(localStorage.getItem(storeKey)||'{}');
-  return {patients:s.patients||[],vehicles:s.vehicles||[{name:'Standardfahrzeug',calibration:null}],entries:s.entries||[]};
+  try { return JSON.parse(localStorage.getItem(storeKey)) || {patients:[],entries:[],currentPatient:'',calibration:null}; }
+  catch { return {patients:[],entries:[],currentPatient:'',calibration:null}; }
 }
-function save(){localStorage.setItem(storeKey,JSON.stringify(state));render();}
-function todayISO(){return new Date().toISOString().slice(0,10)}
-function fmtDate(d){return new Date(d+'T00:00').toLocaleDateString('de-DE')}
-function timeNow(){return new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})}
-function currentVehicle(){return state.vehicles[$('vehicleSelect').selectedIndex]||state.vehicles[0]}
-function currentPatient(){return $('patientSelect').value||''}
-function typeLabel(t){return t==='first'?'Erster Patient':t==='last'?'Letzter Patient':'Patient'}
-
+function save(){ localStorage.setItem(storeKey, JSON.stringify(state)); render(); }
+function show(id){ document.querySelectorAll('.view').forEach(v=>v.classList.remove('active')); $(id).classList.add('active'); }
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function fmtDate(iso){ const [y,m,d]=iso.split('-'); return `${d}.${m}.${y}`; }
+function nowTime(){ return new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}); }
+function kindLabel(k){ return k==='first'?'Erster Patient':k==='last'?'Letzter Patient':'Patient'; }
 function render(){
-  $('vehicleSelect').innerHTML=state.vehicles.map(v=>`<option>${esc(v.name)}</option>`).join('');
-  $('patientSelect').innerHTML=state.patients.length?state.patients.map(p=>`<option>${esc(p)}</option>`).join(''):'<option value="">Patient auswählen</option>';
-  const v=currentVehicle();
-  $('calibrationStatus').textContent=v?.calibration?'Kalibrierung vorhanden':'Noch nicht kalibriert - Erkennung nutzt Foto-Vorschlag';
-  renderEntries();
-}
-function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
-
-$('addPatientBtn').onclick=()=>{const n=prompt('Name des neuen Patienten:'); if(n&&n.trim()){state.patients.push(n.trim()); save(); $('patientSelect').value=n.trim();}};
-$('addVehicleBtn').onclick=()=>{const n=prompt('Name des Fahrzeugs:'); if(n&&n.trim()){state.vehicles.push({name:n.trim(),calibration:null}); save(); $('vehicleSelect').selectedIndex=state.vehicles.length-1; render();}};
-$('vehicleSelect').onchange=render;
-$('entriesBtn').onclick=()=>{$('entries').classList.toggle('hidden');renderEntries();};
-$('clearBtn').onclick=()=>{if(confirm('Alle Einträge löschen? Patienten und Fahrzeuge bleiben erhalten.')){state.entries=[];save();}};
-$('firstBtn').onclick=()=>startCapture('first');
-$('normalBtn').onclick=()=>startCapture('normal');
-$('lastBtn').onclick=()=>startCapture('last');
-$('retryBtn').onclick=()=>{$('kmDialog').close(); startCapture(pendingType);};
-$('saveKmBtn').onclick=saveKmEntry;
-$('exportBtn').onclick=exportMonthly;
-$('calibrateBtn').onclick=()=>{$('calDialog').showModal(); prepareCalCanvas();};
-$('calPhotoBtn').onclick=()=>{pendingType='calibration'; $('photoInput').click();};
-$('saveCalBtn').onclick=saveCalibration;
-
-function startCapture(type){
-  if(!currentPatient() && type!=='last' && type!=='first'){alert('Bitte zuerst Patient auswählen oder neu anlegen.');return;}
-  if(!currentPatient() && (type==='first'||type==='last')){ if(!confirm('Ohne Patient speichern?')) return; }
-  pendingType=type; $('photoInput').click();
-}
-$('photoInput').onchange=e=>{
-  const file=e.target.files[0]; e.target.value=''; if(!file)return;
-  const img=new Image(); img.onload=()=>{
-    if(pendingType==='calibration'){calImage=img; drawCalImage(); return;}
-    pendingImage=img; showKmDialog(img);
-  };
-  img.src=URL.createObjectURL(file);
-};
-
-function canvasFit(canvas,img,maxW=1000){
-  const scale=Math.min(maxW/img.width,1);
-  canvas.width=Math.round(img.width*scale); canvas.height=Math.round(img.height*scale);
-  const ctx=canvas.getContext('2d'); ctx.drawImage(img,0,0,canvas.width,canvas.height);
-  return scale;
-}
-async function showKmDialog(img){
-  $('kmInput').value=''; $('ocrHint').textContent='Foto wird ausgewertet ...'; $('ocrHint').className='';
-  $('dialogTitle').textContent=typeLabel(pendingType);
-  $('kmDialog').showModal();
-  const canvas=$('previewCanvas'); canvasFit(canvas,img);
-  try{
-    const cropped=makeOcrCanvas(img);
-    const p=extractByImageHeuristic(cropped.canvas);
-    if(p){$('kmInput').value=p; $('ocrHint').textContent='Vorschlag erkannt - bitte prüfen.'; $('ocrHint').className='ok'; return;}
-    if(window.Tesseract){
-      const result=await Tesseract.recognize(cropped.canvas,'eng',{logger:()=>{}});
-      const val=pickKm(result.data.text);
-      if(val){$('kmInput').value=val; $('ocrHint').textContent='Vorschlag erkannt - bitte prüfen.'; $('ocrHint').className='ok';}
-      else {$('ocrHint').textContent='Nicht sicher erkannt, bitte Kilometerstand eintragen.'; $('ocrHint').className='warn';}
-    } else {$('ocrHint').textContent='OCR nicht geladen, bitte Kilometerstand eintragen.'; $('ocrHint').className='warn';}
-  }catch(err){$('ocrHint').textContent='Nicht sicher erkannt, bitte Kilometerstand eintragen.'; $('ocrHint').className='warn';}
-}
-function makeOcrCanvas(img){
-  const v=currentVehicle(); const c=document.createElement('canvas'); const ctx=c.getContext('2d');
-  let r=v?.calibration?.rect;
-  if(!r){ r={x:0.33,y:0.50,w:0.34,h:0.18}; }
-  const sx=Math.max(0,Math.round(r.x*img.width)), sy=Math.max(0,Math.round(r.y*img.height));
-  const sw=Math.min(img.width-sx,Math.round(r.w*img.width)), sh=Math.min(img.height-sy,Math.round(r.h*img.height));
-  c.width=900; c.height=Math.round(900*sh/sw);
-  ctx.drawImage(img,sx,sy,sw,sh,0,0,c.width,c.height);
-  const data=ctx.getImageData(0,0,c.width,c.height); const d=data.data;
-  for(let i=0;i<d.length;i+=4){const g=(d[i]+d[i+1]+d[i+2])/3; const v=g>120?255:0; d[i]=d[i+1]=d[i+2]=v;}
-  ctx.putImageData(data,0,0);
-  return {canvas:c};
-}
-function extractByImageHeuristic(canvas){return null;}
-function pickKm(text){
-  const cleaned=(text||'').replace(/[,.]/g,'').replace(/\s+/g,' ');
-  const nums=[...cleaned.matchAll(/\b\d{5,7}\b/g)].map(m=>m[0]);
-  if(!nums.length)return '';
-  nums.sort((a,b)=>b.length-a.length || Number(b)-Number(a));
-  return nums[0];
-}
-function saveKmEntry(){
-  const km=Number($('kmInput').value); if(!km||km<1){alert('Bitte Kilometerstand eintragen.');return;}
-  state.entries.push({id:Date.now(),date:todayISO(),time:timeNow(),type:pendingType,patient:currentPatient(),vehicle:currentVehicle()?.name||'',km});
-  $('kmDialog').close(); save();
-}
-function renderEntries(){
-  const list=$('entryList'); const items=[...state.entries].sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
-  list.innerHTML=items.map(e=>`<div class="entry"><div><span class="pill">${typeLabel(e.type)}</span><b>${esc(e.patient||'-')}</b><small>${fmtDate(e.date)} ${e.time} · ${esc(e.vehicle)}</small></div><b>${e.km} km</b></div>`).join('')||'<p>Noch keine Einträge.</p>';
-}
-function exportMonthly(){
-  if(!state.entries.length){alert('Keine Einträge vorhanden.');return;}
-  const month=prompt('Monat exportieren im Format JJJJ-MM:', todayISO().slice(0,7)); if(!month)return;
-  const entries=state.entries.filter(e=>e.date.startsWith(month)).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
-  const days={}; entries.forEach(e=>(days[e.date] ||= []).push(e));
-  let lines=['Monatsabrechnung Fahrtenbuch','','Monat;'+month,'','Tagesuebersicht','Datum;Erster Patient KM;Letzter Patient KM;Verguetungsrelevante KM;Anzahl Besuche'];
-  Object.keys(days).sort().forEach(d=>{
-    const arr=days[d]; const first=arr.find(e=>e.type==='first')||arr[0]; const last=[...arr].reverse().find(e=>e.type==='last')||arr[arr.length-1];
-    const km=Math.max(0,(last?.km||0)-(first?.km||0));
-    lines.push([fmtDate(d),first?.km||'',last?.km||'',km,arr.length].join(';'));
+  $('currentPatient').textContent = state.currentPatient || 'Bitte auswählen';
+  const count = state.entries.filter(e=>e.date===todayISO()).length;
+  $('todayText').textContent = `Heute, ${fmtDate(todayISO())}`;
+  $('todayCount').textContent = `${count} Einträge`;
+  const list = $('entryList'); list.innerHTML='';
+  const entries = [...state.entries].sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time));
+  if(!entries.length){ list.innerHTML='<div class="hint">Noch keine Einträge vorhanden.</div>'; return; }
+  entries.forEach(e=>{
+    const div=document.createElement('div'); div.className='entry';
+    div.innerHTML=`<div><b>${kindLabel(e.kind)}</b><small><br>${fmtDate(e.date)} · ${e.time}<br>${e.patient||'-'}</small></div><div><b>${e.km}</b><small><br>km</small></div>`;
+    list.appendChild(div);
   });
-  lines.push('','','Einzelnachweise','Datum;Uhrzeit;Typ;Patient;Fahrzeug;Kilometerstand');
-  entries.forEach(e=>lines.push([fmtDate(e.date),e.time,typeLabel(e.type),e.patient,e.vehicle,e.km].map(csv).join(';')));
-  downloadText(`fahrtenbuch_${month}.csv`, lines.join('\n'));
 }
-function csv(v){return '"'+String(v??'').replace(/"/g,'""')+'"'}
-function downloadText(name,text){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type:'text/csv;charset=utf-8'}));a.download=name;a.click();}
+function choosePatient(){
+  const existing = state.patients.length ? '\nBekannte Patienten:\n' + state.patients.map((p,i)=>`${i+1}. ${p}`).join('\n') : '';
+  const input = prompt('Patient auswählen oder neuen Namen eingeben:' + existing, state.currentPatient || '');
+  if(!input) return;
+  const n = input.trim(); if(!n) return;
+  if(!state.patients.includes(n)) state.patients.push(n);
+  state.currentPatient = n; save();
+}
+function startCapture(kind){
+  pendingKind = kind;
+  pendingImageData = null;
+  $('kmInput').value=''; $('ocrStatus').textContent='Bereit';
+  $('photoPreview').innerHTML='<span>Noch kein Foto</span>';
+  show('captureView');
+}
+function openFile(inputId){ $(inputId).value=''; $(inputId).click(); }
+function readFile(file, cb){
+  if(!file) return;
+  const r=new FileReader();
+  r.onload=()=>cb(r.result);
+  r.readAsDataURL(file);
+}
+function setPreview(id, data){ $(id).innerHTML=`<img src="${data}" alt="Foto" />`; }
 
-function prepareCalCanvas(){ if(calImage) drawCalImage(); else {const c=$('calCanvas'); c.width=800; c.height=400; const ctx=c.getContext('2d'); ctx.fillStyle='#111'; ctx.fillRect(0,0,c.width,c.height); ctx.fillStyle='white'; ctx.font='24px sans-serif'; ctx.fillText('Bitte Foto wählen',40,80);} }
-function drawCalImage(){
-  const c=$('calCanvas'); canvasFit(c,calImage); if(calRect) drawRect(c,calRect);
+async function imageToCanvas(dataUrl){
+  const img = new Image();
+  img.decoding='async';
+  await new Promise((res,rej)=>{ img.onload=res; img.onerror=rej; img.src=dataUrl; });
+  const max=1400; let w=img.width,h=img.height; const scale=Math.min(1,max/Math.max(w,h)); w=Math.round(w*scale); h=Math.round(h*scale);
+  const c=document.createElement('canvas'); c.width=w; c.height=h;
+  const ctx=c.getContext('2d'); ctx.drawImage(img,0,0,w,h);
+  return c;
 }
-function drawRect(c,r){const ctx=c.getContext('2d'); ctx.strokeStyle='#fff'; ctx.lineWidth=4; ctx.strokeRect(r.x*c.width,r.y*c.height,r.w*c.width,r.h*c.height); ctx.strokeStyle='#4f46e5'; ctx.lineWidth=2; ctx.strokeRect(r.x*c.width,r.y*c.height,r.w*c.width,r.h*c.height);}
-function ptr(e,c){const rect=c.getBoundingClientRect(); const t=e.touches?e.touches[0]:e; return {x:(t.clientX-rect.left)/rect.width,y:(t.clientY-rect.top)/rect.height};}
-['mousedown','touchstart'].forEach(ev=>$('calCanvas').addEventListener(ev,e=>{e.preventDefault(); drawing=true; startPt=ptr(e,$('calCanvas'));}));
-['mousemove','touchmove'].forEach(ev=>$('calCanvas').addEventListener(ev,e=>{if(!drawing||!startPt)return; e.preventDefault(); const p=ptr(e,$('calCanvas')); calRect={x:Math.min(startPt.x,p.x),y:Math.min(startPt.y,p.y),w:Math.abs(p.x-startPt.x),h:Math.abs(p.y-startPt.y)}; drawCalImage();}));
-['mouseup','mouseleave','touchend'].forEach(ev=>$('calCanvas').addEventListener(ev,()=>{drawing=false;}));
+function cropCanvas(src, cr){
+  const c=document.createElement('canvas');
+  const sx=Math.max(0, Math.round(src.width*cr.x));
+  const sy=Math.max(0, Math.round(src.height*cr.y));
+  const sw=Math.min(src.width-sx, Math.round(src.width*cr.w));
+  const sh=Math.min(src.height-sy, Math.round(src.height*cr.h));
+  c.width=sw; c.height=sh;
+  c.getContext('2d').drawImage(src,sx,sy,sw,sh,0,0,sw,sh);
+  return c;
+}
+function preprocess(c){
+  const out=document.createElement('canvas'); out.width=c.width*2; out.height=c.height*2;
+  const ctx=out.getContext('2d'); ctx.drawImage(c,0,0,out.width,out.height);
+  const img=ctx.getImageData(0,0,out.width,out.height); const d=img.data;
+  for(let i=0;i<d.length;i+=4){
+    const g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+    const v=g>120?255:0; d[i]=d[i+1]=d[i+2]=v;
+  }
+  ctx.putImageData(img,0,0); return out;
+}
+function extractCandidates(text){
+  const raw = (text||'').replace(/[Oo]/g,'0').replace(/[Il|]/g,'1').replace(/[S]/g,'5');
+  const chunks = raw.match(/\d[\d\s.,]{3,10}\d/g) || [];
+  const nums=[];
+  for(const ch of chunks){
+    const compact=ch.replace(/[^0-9]/g,'');
+    if(compact.length>=5 && compact.length<=7) nums.push(compact);
+  }
+  const all = raw.match(/\b\d{5,7}\b/g)||[]; nums.push(...all);
+  const unique=[...new Set(nums)].map(Number).filter(n=>n>=10000 && n<=9999999);
+  return unique.sort((a,b)=>{
+    const sa = scoreKm(a), sb = scoreKm(b); return sb-sa;
+  });
+}
+function scoreKm(n){
+  let s=0; const str=String(n);
+  if(str.length===6) s+=5; if(str.length===5) s+=3; if(str.length===7) s+=1;
+  const last = state.entries[state.entries.length-1]?.km;
+  if(last){ const diff=Math.abs(n-Number(last)); if(diff<500) s+=8; else if(diff<3000) s+=4; }
+  const cal = Number(state.calibration?.km); if(cal){ const diff=Math.abs(n-cal); if(diff<50000) s+=2; }
+  return s;
+}
+async function recognize(dataUrl){
+  $('ocrStatus').textContent='Erkennung läuft...';
+  if(!window.Tesseract){ $('ocrStatus').textContent='OCR konnte nicht geladen werden. Bitte manuell eintragen.'; return; }
+  try{
+    const base = await imageToCanvas(dataUrl);
+    const tries=[];
+    if(state.calibration?.crop) tries.push(cropCanvas(base,state.calibration.crop));
+    tries.push(cropCanvas(base,{x:.18,y:.50,w:.55,h:.20})); // links unten/mittig wie Audi
+    tries.push(cropCanvas(base,{x:.10,y:.45,w:.80,h:.35}));
+    tries.push(base);
+    let best=[];
+    for(const t of tries){
+      const p=preprocess(t);
+      const res=await Tesseract.recognize(p,'eng',{logger:()=>{}});
+      const candidates=extractCandidates(res.data.text);
+      if(candidates.length){ best=candidates; break; }
+    }
+    if(best.length){
+      $('kmInput').value=best[0];
+      $('ocrStatus').textContent=`Vorschlag erkannt: ${best[0]} km. Bitte prüfen.`;
+    } else {
+      $('ocrStatus').textContent='Nicht sicher erkannt. Bitte Kilometerstand eintragen.';
+    }
+  }catch(e){
+    console.error(e); $('ocrStatus').textContent='Erkennung fehlgeschlagen. Bitte manuell eintragen.';
+  }
+}
+function handleCaptureFile(file){
+  readFile(file, async (data)=>{ pendingImageData=data; setPreview('photoPreview',data); await recognize(data); });
+}
+function saveEntry(){
+  const km=$('kmInput').value.replace(/[^0-9]/g,'');
+  if(!km || km.length<4){ alert('Bitte Kilometerstand eintragen.'); return; }
+  if(!state.currentPatient){ choosePatient(); if(!state.currentPatient) return; }
+  state.entries.push({id:crypto.randomUUID?.()||String(Date.now()),kind:pendingKind,patient:state.currentPatient,km:Number(km),date:todayISO(),time:nowTime()});
+  save(); show('homeView');
+}
+function monthCsv(){
+  const now=new Date(); const ym=now.toISOString().slice(0,7);
+  const rows=state.entries.filter(e=>e.date.startsWith(ym)).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+  const byDay={}; rows.forEach(e=>{(byDay[e.date] ||= []).push(e)});
+  const out=[['Monat',ym],[],['Datum','Erster Patient KM','Letzter Patient KM','Verguetete KM','Anzahl Besuche'],[]];
+  for(const day of Object.keys(byDay).sort()){
+    const d=byDay[day]; const first=d.find(e=>e.kind==='first')||d[0]; const last=[...d].reverse().find(e=>e.kind==='last')||d[d.length-1];
+    out.push([fmtDate(day),first?.km||'',last?.km||'',first&&last?Math.max(0,last.km-first.km):'',d.length]);
+  }
+  out.push([],['Einzelnachweise'],['Datum','Uhrzeit','Typ','Patient','Kilometerstand']);
+  rows.forEach(e=>out.push([fmtDate(e.date),e.time,kindLabel(e.kind),e.patient,e.km]));
+  download('monatsabrechnung.csv', out.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(';')).join('\n'));
+}
+function download(name, content){
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([content],{type:'text/csv;charset=utf-8'})); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),5000);
+}
+function backup(){ download('fahrtenbuch-backup.json', JSON.stringify(state,null,2)); }
+function clearData(){ if(confirm('Wirklich alle Patienten, Einträge und Kalibrierungen löschen?')){ localStorage.removeItem(storeKey); state=load(); save(); show('homeView'); } }
+
+function loadCalibrationPhoto(file){
+  readFile(file, data=>{ calibrationImageData=data; $('calPhotoPreview').innerHTML=`<img src="${data}" alt="Kalibrierung" /><div id="cropBox" class="crop-box"></div>`; attachCrop(); });
+}
+function attachCrop(){
+  const box=$('cropBox'); if(!box) return;
+  const host=$('calPhotoPreview');
+  Object.assign(box.style,{left:(crop.x*100)+'%',top:(crop.y*100)+'%',width:(crop.w*100)+'%',height:(crop.h*100)+'%'});
+  let start=null;
+  box.onpointerdown=(ev)=>{ start={px:ev.clientX,py:ev.clientY,x:crop.x,y:crop.y}; box.setPointerCapture(ev.pointerId); };
+  box.onpointermove=(ev)=>{ if(!start) return; const r=host.getBoundingClientRect(); crop.x=Math.min(.85,Math.max(0,start.x+(ev.clientX-start.px)/r.width)); crop.y=Math.min(.85,Math.max(0,start.y+(ev.clientY-start.py)/r.height)); box.style.left=(crop.x*100)+'%'; box.style.top=(crop.y*100)+'%'; };
+  box.onpointerup=()=>{ start=null; };
+}
 function saveCalibration(){
-  if(!calImage){alert('Bitte zuerst ein Foto wählen.');return;}
-  if(!calRect||calRect.w<0.05||calRect.h<0.03){alert('Bitte den Bereich des Kilometerstands markieren.');return;}
-  const km=Number($('calKmInput').value); if(!km){alert('Bitte den Kilometerstand vom Kalibrierfoto eintragen.');return;}
-  currentVehicle().calibration={rect:calRect,exampleKm:km,date:new Date().toISOString()};
-  $('calDialog').close(); save(); alert('Kalibrierung gespeichert.');
+  const vehicle=$('vehicleInput').value.trim() || 'Fahrzeug'; const km=$('calKmInput').value.replace(/[^0-9]/g,'');
+  if(!calibrationImageData){ alert('Bitte ein Kalibrierungsfoto aufnehmen oder hochladen.'); return; }
+  if(!km){ alert('Bitte Kilometerstand auf dem Foto eingeben.'); return; }
+  state.calibration={vehicle,km:Number(km),crop}; save(); alert('Kalibrierung gespeichert.'); show('settingsView');
 }
 
-if('serviceWorker' in navigator){navigator.serviceWorker.register('./sw.js').catch(()=>{});}
-render();
+document.addEventListener('DOMContentLoaded',()=>{
+  render(); if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+  $('settingsBtn').onclick=()=>show('settingsView'); $('choosePatientBtn').onclick=choosePatient; $('patientCard').onclick=choosePatient;
+  document.querySelectorAll('.backBtn').forEach(b=>b.onclick=()=>show('homeView'));
+  document.querySelectorAll('.action').forEach(b=>b.onclick=()=>startCapture(b.dataset.kind));
+  $('entriesBtn').onclick=()=>{render();show('entriesView')}; $('uploadBtn').onclick=()=>{startCapture('visit'); openFile('galleryInput');};
+  $('takePhotoBtn').onclick=()=>openFile('cameraInput'); $('selectPhotoBtn').onclick=()=>openFile('galleryInput');
+  $('cameraInput').onchange=e=>handleCaptureFile(e.target.files[0]); $('galleryInput').onchange=e=>handleCaptureFile(e.target.files[0]);
+  $('saveEntryBtn').onclick=saveEntry;
+  $('downloadMonthlyBtn').onclick=monthCsv; $('backupBtn').onclick=backup; $('clearDataBtn').onclick=clearData;
+  $('calibrationBtn').onclick=()=>{ $('vehicleInput').value=state.calibration?.vehicle||''; $('calKmInput').value=state.calibration?.km||''; crop=state.calibration?.crop||crop; show('calibrationView'); attachCrop(); };
+  $('calTakePhotoBtn').onclick=()=>openFile('calCameraInput'); $('calSelectPhotoBtn').onclick=()=>openFile('calGalleryInput');
+  $('calCameraInput').onchange=e=>loadCalibrationPhoto(e.target.files[0]); $('calGalleryInput').onchange=e=>loadCalibrationPhoto(e.target.files[0]);
+  $('saveCalibrationBtn').onclick=saveCalibration;
+});
