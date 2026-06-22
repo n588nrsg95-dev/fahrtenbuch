@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f766e">
+  <title>Fahrtenbuch Patienten</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app">
+    <header>
+      <h1>Fahrtenbuch</h1>
+      <p>Ankunft beim Patienten erfassen</p>
+    </header>
+
+    <section class="card">
+      <label for="patientSelect">Patient</label>
+      <select id="patientSelect"></select>
+      <button id="addPatientBtn" class="secondary" type="button">+ Neuen Patienten anlegen</button>
+    </section>
+
+    <section class="card action-card">
+      <button id="arrivalBtn" class="primary" type="button">📷 Ankunft beim Patienten</button>
+      <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
+      <p id="status" class="status">Bereit</p>
+    </section>
+
+    <section id="confirmBox" class="card hidden">
+      <h2>Kilometerstand bestätigen</h2>
+      <img id="preview" alt="Foto vom Kilometerstand">
+      <label for="kmInput">Kilometerstand</label>
+      <input id="kmInput" inputmode="numeric" pattern="[0-9]*" placeholder="z. B. 124532">
+      <button id="saveEntryBtn" class="primary" type="button">Speichern</button>
+      <button id="cancelBtn" class="secondary" type="button">Abbrechen</button>
+    </section>
+
+    <section class="card">
+      <h2>Heutige Einträge</h2>
+      <div id="entryList" class="entries"></div>
+      <button id="exportBtn" class="secondary" type="button">CSV exportieren</button>
+    </section>
+  </main>
+
+  <dialog id="patientDialog">
+    <form method="dialog" class="dialog-card">
+      <h2>Neuer Patient</h2>
+      <label for="newPatientInput">Name / Kürzel</label>
+      <input id="newPatientInput" autocomplete="off" placeholder="z. B. Müller">
+      <menu>
+        <button id="closeDialogBtn" value="cancel" class="secondary" type="button">Abbrechen</button>
+        <button id="savePatientBtn" value="default" class="primary" type="button">Speichern</button>
+      </menu>
+    </form>
+  </dialog>
+
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
